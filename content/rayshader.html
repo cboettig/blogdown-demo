@@ -1,0 +1,162 @@
+---
+output: 
+  github_document:
+    fig_width: 7.5
+    fig_height: 6
+  html_preview: false
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+<p>Rayshader has seven functions related to hillshading:</p>
+<ul>
+<li><code>ray_shade</code> uses user specified light directions to calculate a global shadow map for an elevation matrix. By default, this also scales the light intensity at each point by the dot product of the mean ray direction and the surface normal (also implemented in function <code>lamb_shade</code>, this can be turned off by setting <code>lambert=FALSE</code>.</li>
+<li><code>sphere_shade</code> maps an RGB texture to a hillshade by spherical mapping. A texture can be generated with the <code>create_texture</code> function, or loaded from an image. <code>sphere_shade</code> also includes 7 built-in palettes: “imhof1”,“imhof2”,“imhof3”,imhof4“,”desert“,”bw“,”unicorn&quot;.</li>
+<li><code>create_texture</code> programmatically creates texture maps given five colors: a highlight, a shadow, a left fill light, a right fill light, and a center color for flat areas. The user can also optionally specify the colors at the corners, but <code>create_texture</code> will interpolate those if they aren’t given.</li>
+<li><code>ambient_shade</code> creates an ambient occlusion shadow layer, darkening areas that have less scattered light from the atmosphere. This results in valleys being darker than flat areas and ridges.</li>
+<li><code>lamb_shade</code> uses a single user specified light direction to calculate a local shadow map based on the dot product between the surface normal and the light direction for an elevation matrix.</li>
+<li><code>add_shadow</code> takes two of the shadow maps above and combines them, scaling the second one (or, if the second is an RGB array, the matrix) as specified by the user.</li>
+<li><code>add_overlay</code> takes a 3 or 4-layer RGB/RGBA array and overlays it on the current map. If the map includes transparency, this is taken into account when overlaying the image. Otherwise, the user can specify a single color that will be marked as completely transparent, or set the full overlay as partly transparent.</li>
+</ul>
+<p>Rayshader also has three functions to detect and add water to maps:</p>
+<ul>
+<li><code>detect_water</code> uses a flood-fill algorithm to detect bodies of water of a user-specified minimum area.</li>
+<li><code>add_water</code> uses the output of <code>detect_water</code> to add a water color to the map. The user can input their own color, or pass the name of one of the pre-defined palettes from <code>sphere_shade</code> to get a matching hue.</li>
+<li><code>render_water</code> adds a 3D tranparent water layer to 3D maps, after the rgl device has already been created. This can either add to a map that does not already have a water layer, or replace an existing water layer on the map.</li>
+</ul>
+<p>Also included are two functions to add additional effects and information to your 3D visualizations:</p>
+<ul>
+<li><code>render_depth</code> generates a depth of field effect for the 3D map. The user can specify the focal distance, focal length, and f-stop of the camera, as well as aperture shape and bokeh intensity. This either plots the image to the local device, or saves it to a file if given a filename.</li>
+<li><code>render_label</code> adds a text label to the <code>x</code> and <code>y</code> coordinate of the map at a specified altitude <code>z</code> (in units of the matrix). The altitude can either be specified relative to the elevation at that point (the default), or absolutely.</li>
+</ul>
+<p>And four functions to display and save your maps:</p>
+<ul>
+<li><code>plot_map</code> Plots the current map. Accepts either a matrix or an array.</li>
+<li><code>write_png</code> Writes the current map to disk with a user-specified filename.</li>
+<li><code>plot_3d</code> Creates a 3D map, given a texture and an elevation matrix. You can customize the appearance of the map, as well as add a user-defined water level.</li>
+<li><code>render_snapshot</code> Saves an image of the current 3D view to disk (if given a filename), or plots the 3D view to the current device (useful for including images in R Markdown files).</li>
+</ul>
+<p>All of these functions are designed to be used with the magrittr pipe <code>%&gt;%</code>.</p>
+<div id="usage" class="section level2">
+<h2>Usage</h2>
+<pre class="r"><code>library(rayshader)
+
+#Here, I load a map with the raster package.
+loadzip = tempfile() 
+download.file(&quot;https://tylermw.com/data/dem_01.tif.zip&quot;, loadzip)
+localtif = raster::raster(unzip(loadzip, &quot;dem_01.tif&quot;))
+unlink(loadzip)
+
+#And convert it to a matrix:
+elmat = matrix(raster::extract(localtif,raster::extent(localtif),buffer=1000),
+               nrow=ncol(localtif),ncol=nrow(localtif))
+
+#We use another one of rayshader&#39;s built-in textures:
+elmat %&gt;%
+  sphere_shade(texture = &quot;desert&quot;) %&gt;%
+  plot_map()</code></pre>
+<p><img src="/rayshader_files/figure-html/basicmapping-1.png" width="672" /></p>
+<pre class="r"><code>#sphere_shade can shift the sun direction:
+elmat %&gt;%
+  sphere_shade(sunangle = 45, texture = &quot;desert&quot;) %&gt;%
+  plot_map()</code></pre>
+<p><img src="/rayshader_files/figure-html/basicmapping-2.png" width="672" /></p>
+<pre class="r"><code>#detect_water and add_water adds a water layer to the map:
+elmat %&gt;%
+  sphere_shade(texture = &quot;desert&quot;) %&gt;%
+  add_water(detect_water(elmat), color=&quot;desert&quot;) %&gt;%
+  plot_map()</code></pre>
+<p><img src="/rayshader_files/figure-html/basicmapping-3.png" width="672" /></p>
+<pre class="r"><code>raymat = ray_shade(elmat)
+
+#And we can add a raytraced layer from that sun direction as well:
+elmat %&gt;%
+  sphere_shade(texture = &quot;desert&quot;) %&gt;%
+  add_water(detect_water(elmat), color=&quot;desert&quot;) %&gt;%
+  add_shadow(raymat) %&gt;%
+  plot_map()</code></pre>
+<p><img src="/rayshader_files/figure-html/basicmapping-4.png" width="672" /></p>
+<pre class="r"><code>#And here we add an ambient occlusion shadow layer, which models 
+#lighting from atmospheric scattering:
+
+ambmat = ambient_shade(elmat)
+
+elmat %&gt;%
+  sphere_shade(texture = &quot;desert&quot;) %&gt;%
+  add_water(detect_water(elmat), color=&quot;desert&quot;) %&gt;%
+  add_shadow(raymat) %&gt;%
+  add_shadow(ambmat) %&gt;%
+  plot_map()</code></pre>
+<p><img src="/rayshader_files/figure-html/basicmapping-5.png" width="672" /></p>
+<p>Rayshader also supports 3D mapping by passing a texture map (either external or one produced by rayshader) into the <code>plot_3d</code> function.</p>
+<pre class="r"><code>elmat %&gt;%
+  sphere_shade(texture = &quot;desert&quot;) %&gt;%
+  add_water(detect_water(elmat), color=&quot;desert&quot;) %&gt;%
+  add_shadow(ray_shade(elmat,zscale=3,maxsearch = 300),0.5) %&gt;%
+  add_shadow(ambmat,0.5) %&gt;%
+  plot_3d(elmat,zscale=10,fov=0,theta=135,zoom=0.75,phi=45, windowsize = c(1000,800))
+render_snapshot()</code></pre>
+<p><img src="/rayshader_files/figure-html/three-d-1.png" width="672" /></p>
+<p>You can also easily add a water layer by setting <code>water = TRUE</code> in <code>plot_3d()</code> (and setting <code>waterdepth</code> if the water level is not 0), or by using the function <code>render_water()</code> after the 3D map has been rendered. You can customize the appearance and transparancy of the water layer via function arguments. Here’s an example using bathymetric/topographic data of Monterey Bay, CA (included with rayshader):</p>
+<pre class="r"><code>montshadow = ray_shade(montereybay,zscale=50,lambert=FALSE)
+montamb = ambient_shade(montereybay,zscale=50)
+montereybay %&gt;% 
+    sphere_shade(zscale=10,texture = &quot;imhof1&quot;) %&gt;% 
+    add_shadow(montshadow,0.5) %&gt;%
+    add_shadow(montamb) %&gt;%
+    plot_3d(montereybay,zscale=50,fov=0,theta=-45,phi=45,windowsize=c(1000,800),zoom=0.75,
+            water=TRUE, waterdepth = 0, wateralpha = 0.5,watercolor = &quot;lightblue&quot;,
+            waterlinecolor = &quot;white&quot;,waterlinealpha = 0.5)
+render_snapshot()</code></pre>
+<p><img src="/rayshader_files/figure-html/three-d-water-1.png" width="672" /></p>
+<p>Rayshader also has map shapes other than rectangular included <code>c(&quot;hex&quot;, &quot;circle&quot;)</code>, and you can customize the map into any shape you want by setting the areas you do not want to display to <code>NA</code>.</p>
+<pre class="r"><code>par(mfrow=c(1,2))
+montereybay %&gt;% 
+    sphere_shade(zscale=10,texture = &quot;imhof1&quot;) %&gt;% 
+    add_shadow(montshadow,0.5) %&gt;%
+    add_shadow(montamb) %&gt;%
+    plot_3d(montereybay,zscale=50,fov=0,theta=-45,phi=45,windowsize=c(1000,800),zoom=0.6,
+            water=TRUE, waterdepth = 0, wateralpha = 0.5,watercolor = &quot;lightblue&quot;,
+            waterlinecolor = &quot;white&quot;,waterlinealpha = 0.5,baseshape = &quot;circle&quot;)
+render_snapshot()
+rgl::rgl.clear()
+
+montereybay %&gt;% 
+    sphere_shade(zscale=10,texture = &quot;imhof1&quot;) %&gt;% 
+    add_shadow(montshadow,0.5) %&gt;%
+    add_shadow(montamb) %&gt;%
+    plot_3d(montereybay,zscale=50,fov=0,theta=-45,phi=45,windowsize=c(1000,800),zoom=0.6,
+            water=TRUE, waterdepth = 0, wateralpha = 0.5,watercolor = &quot;lightblue&quot;,
+            waterlinecolor = &quot;white&quot;,waterlinealpha = 0.5,baseshape = &quot;hex&quot;)
+render_snapshot()</code></pre>
+<p><img src="/rayshader_files/figure-html/three-d-shapes-1.png" width="1440" /></p>
+<p>Adding text labels is done with the <code>render_label()</code> function, which also allows you to customize the line type, color, and size along with the font:</p>
+<pre class="r"><code>montereybay %&gt;% 
+    sphere_shade(zscale=10,texture = &quot;imhof1&quot;) %&gt;% 
+    add_shadow(montshadow,0.5) %&gt;%
+    add_shadow(montamb) %&gt;%
+    plot_3d(montereybay,zscale=50,fov=0,theta=-100,phi=30,windowsize=c(1000,800),zoom=0.6,
+            water=TRUE, waterdepth = 0, waterlinecolor = &quot;white&quot;, waterlinealpha = 0.5,
+            wateralpha = 0.5,watercolor = &quot;lightblue&quot;)
+render_label(montereybay,x=350,y=240, z=4000,zscale=50,
+             text = &quot;Moss Landing&quot;,textsize = 2,linewidth = 5)
+render_label(montereybay,x=220,y=330, z=6000,zscale=50,
+             text = &quot;Santa Cruz&quot;,color=&quot;darkred&quot;,textcolor = &quot;darkred&quot;,textsize = 2,linewidth = 5)
+render_label(montereybay,x=300,y=130, z=4000,zscale=50,
+             text = &quot;Monterey&quot;,dashed = TRUE,textsize = 2,linewidth = 5)
+render_label(montereybay,x=50,y=130, z=1000,zscale=50,
+             text = &quot;Monterey Canyon&quot;,relativez=FALSE,textsize = 2,linewidth = 5)
+render_snapshot()</code></pre>
+<p><img src="/rayshader_files/figure-html/three-d-labels-1.png" width="672" /></p>
+<p>You can also apply a post-processing effect to the 3D maps to render maps with depth of field with the <code>render_depth()</code> function:</p>
+<pre class="r"><code>elmat %&gt;%
+  sphere_shade(texture = &quot;desert&quot;) %&gt;%
+  add_water(detect_water(elmat), color=&quot;desert&quot;) %&gt;%
+  add_shadow(raymat,0.5) %&gt;%
+  add_shadow(ambmat,0.5) %&gt;%
+  plot_3d(elmat,zscale=10,fov=30,theta=-225,phi=25,windowsize=c(1000,800),zoom=0.3)
+render_depth(focus=0.6,focallength = 200)</code></pre>
+<p><img src="/rayshader_files/figure-html/three-d-depth-1.png" width="960" /></p>
+</div>
