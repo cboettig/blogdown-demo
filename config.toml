@@ -1,4 +1,4 @@
-baseurl = "/"
+baseurl = "/blogdown-demo/"
 languageCode = "en-us"
 title = "ESPM 288 Blogdown Demo"
 theme = "hugo-now-ui"
